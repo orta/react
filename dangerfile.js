@@ -12,6 +12,7 @@ const fetch = require('node-fetch');
 
 const {generateResultsArray} = require('./scripts/rollup/stats');
 const {readFileSync} = require('fs');
+const {exec} = require('child_process');
 
 const currentBuildResults = JSON.parse(
   readFileSync('./scripts/rollup/results.json')
@@ -44,13 +45,27 @@ function emojiPercent(change) {
   }
 }
 
-// Grab the results.json before we ran CI via the GH API
-// const baseMerge = danger.github.pr.base.sha
-const parentOfOldestCommit = danger.git.commits[0].parents[0];
-const commitURL = sha =>
-  `http://react.zpao.com/builds/master/_commits/${sha}/results.json`;
+function getMergeBase() {
+  return new Promise(res => {
+    exec('git merge-base HEAD master', (err, stdout, stderr) => {
+      if (err) {
+        throw err;
+      } else {
+        res(stdout);
+      }
+    });
+  });
+}
 
-fetch(commitURL(parentOfOldestCommit)).then(async response => {
+(async function() {
+  // Grab the results.json before we ran CI via the GH API
+  // const baseMerge = danger.github.pr.base.sha
+
+  const mergeBaseCommit = await getMergeBase();
+  const commitURL = sha =>
+    `http://react.zpao.com/builds/master/_commits/${sha}/results.json`;
+
+  const response = await fetch(commitURL(mergeBaseCommit));
   const previousBuildResults = await response.json();
   const results = generateResultsArray(
     currentBuildResults,
@@ -136,16 +151,16 @@ fetch(commitURL(parentOfOldestCommit)).then(async response => {
     }
 
     const summary = `
-<details>
-<summary>Details of bundled changes.</summary>
+  <details>
+  <summary>Details of bundled changes.</summary>
 
-<p>Comparing: ${parentOfOldestCommit}...${danger.github.pr.head.sha}</p>
+  <p>Comparing: ${mergeBaseCommit}...${danger.github.pr.head.sha}</p>
 
 
-${allTables.join('\n')}
+  ${allTables.join('\n')}
 
-</details>
-`;
+  </details>
+  `;
     markdown(summary);
   }
-});
+})();
